@@ -1,0 +1,54 @@
+* initial prompt, first time using openai codex
+
+Org mode has checkboxes that lool like this:
+
++ [0%] actions
+  - [ ] do this
+  - [ ] do that
+  - [ ] etc
+
+I have a use case that looks like this
+
+- [75%] resolutions
+  - [X] bike-miles (- 60 (+ 8 4 1 12 15 20))
+  - [ ] read-pages (- 60 (+ 11 5 2 4 ))
+  - [X] son-reads-books (- 6 (+ 5 2))
+  - [X] son-practices-math (- 6 (+ 3 1 1 1))
+
+How this works is throughout the week I update my tallies on the items
+and at the end of 2 weeks I have a percentage score on how well I
+measured up to my personal metrics on things I consider important to
+maintain.
+
+What I would like to do, using existing org features if possible, is
+to have the checkbox set for the item if the evaluated result of the
+tally is less than 1.
+
+If it's not straightforwardly doable using native org functionality
+then I'd like to write some emacs lisp code that makes it possible to
+have a form that looks something like this.
+
+In an emacs lisp source code file:
+
+#+BEGIN_SRC emacs-lisp
+    (setq resolutions
+          ('bike-miles (lambda (arg-list) (- 60 (apply '+ arg-list))))
+          ('read-pages (lambda (arg-list) (- 60 (apply '+ arg-list))))
+          ;;...
+          )
+#+END_SRC
+
+In an org file, when I run C-c C-c or something similar, the
+read-pages item would be checked because the values to its right when
+passed to the lambda for 'read-pages evaluates as less than 1.
+
+#+BEGIN_SRC
+- [50%] #+resolutions
+  - [ ] bike-miles 10 8 12
+  - [X] read-pages 70
+#+END_SRC
+
+This could ideally be handled by some sort of hook on org-ctl-c-ctl-c
+(if that is possible) contingent on some special identifier in the
+outline heading such as the string #+resolutions matching the setq
+earlier.

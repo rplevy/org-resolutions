@@ -1,0 +1,59 @@
+#+TITLE: org-resolutions
+
+* Overview
+
+~org-resolutions.el~ evaluates Org checkbox items from named numeric rules.
+When a rule returns a value less than ~org-resolutions-threshold~, the item is
+checked automatically.
+
+Example Org list:
+
+#+begin_src org
+- [0%] #+resolutions
+  - [ ] bike-miles 10 8 12
+  - [ ] read-pages 70
+#+end_src
+
+* Add It To Your .emacs
+
+If the files live in =~/src/org-resolutions/=, add that directory to your
+~load-path~, load the library, define your rules, and enable the mode.
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "~/src/org-resolutions")
+
+(require 'org-resolutions)
+
+(setq org-resolutions-rules
+      '(("bike-miles" . (lambda (args) (- 60 (apply #'+ args))))
+        ("read-pages" . (lambda (args) (- 60 (apply #'+ args)))))
+      org-resolutions-threshold 1)
+
+(org-resolutions-mode 1)
+#+end_src
+
+With that in place, pressing ~C-c C-c~ on the ~#+resolutions~ marker item or on
+one of its children will evaluate the list and refresh the checkbox cookie.
+
+* Use The Example Configuration
+
+This repository also includes ~example-usage.el~, which contains a fuller sample
+rule set. To use that from your =~/.emacs=:
+
+#+begin_src emacs-lisp
+(add-to-list 'load-path "~/src/org-resolutions")
+
+(require 'org-resolutions)
+(load "example-usage")
+#+end_src
+
+* Org Syntax
+
+Each child item under the marker should have this form:
+
+#+begin_src text
+NAME ARG1 ARG2 ...
+#+end_src
+
+The ~NAME~ is looked up in ~org-resolutions-rules~, and the numeric arguments
+are passed to the corresponding function as a list.
