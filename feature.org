@@ -1,0 +1,49 @@
+* new feature
+
+I would like to change how this works somewhat.
+
+Currently I have an outline list that looks like this for example
+
+- [0%] #+resolutions
+  - [ ] drink-water 4 5 4
+  - [ ] bike-miles 13 16
+  - [ ] read-pages 0
+
+Which would be backed by these rules:
+
+(setq org-resolutions-rules
+      '(("drink-water" . (lambda (args) (- 48 (apply #'+ args))))
+        ("bike-miles" . (lambda (args) (- 60 (apply #'+ args))))
+        ("read-pages" . (lambda (args) (- 60 (apply #'+ args))))))
+
+
+Instead I'd like it to work like this
+
+- [0%] #+resolutions
+  - [27%] drink-water 4 5 4
+  - [48%] bike-miles 13 16
+  - [0%] read-pages 0
+
+Backed by
+
+(setq org-resolutions-rules
+      '(("drink-water" . (lambda (args) (list 48 (apply #'+ args))))
+        ("bike-miles" . (lambda (args) (list 60 (apply #'+ args))))
+        ("read-pages" . (lambda (args) (list 60 (apply #'+ args))))))
+
+The first item in the function's returned list is expected to be the
+the goal, and the second is expected to be the current state.
+
+If the current state is under the goal, the checkbox should reflect
+the percentage complete, as driven by the result of lambda. E.g. the
+percentage for drink-water is 27% because the lambda returns '(48 13)
+and 27 = 1300 / 48.
+
+If the current state is equal to the goal, it should show %100
+
+If the current state is exceeds the goal, it should still show %100
+
+The normal behavior of percentage checkbox outlines should still hold:
+items that are under %100 count as incomplete for the outer /
+top-level percentage checkbox, which is why it's [0%] in the example
+above.

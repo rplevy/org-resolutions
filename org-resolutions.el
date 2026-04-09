@@ -8,16 +8,23 @@
 
 ;; Mark a parent checkbox item with `#+resolutions`:
 ;;
-;;   - [0%] #+resolutions
-;;     - [ ] bike-miles 10 8 12
-;;     - [ ] read-pages 70
+;;   - [33%] #+resolutions
+;;     - [27%] drink-water 4 5 4
+;;     - [48%] bike-miles 13 16
+;;     - [100%] read-pages 70
 ;;
 ;; Each child item is interpreted as:
 ;;
 ;;   NAME ARG1 ARG2 ...
 ;;
-;; `NAME` is looked up in `org-resolutions-rules`.  The checkbox is set to
-;; done when the rule result is strictly less than `org-resolutions-threshold`.
+;; `NAME` is looked up in `org-resolutions-rules`.
+;;
+;; A rule may return either:
+;;
+;; - a number, preserving the original behavior where the item is marked done
+;;   when the value is strictly less than `org-resolutions-threshold`
+;; - a list (GOAL CURRENT), which renders the item cookie as a percentage based
+;;   on CURRENT / GOAL and treats the item as complete once it reaches 100%
 ;;
 ;; Configure `org-resolutions-rules` in your init file or see `example-usage.el`
 ;; for a complete sample setup.
@@ -40,7 +47,7 @@
   :group 'org-resolutions)
 
 (defcustom org-resolutions-threshold 1
-  "Checkboxes are set to done when a rule returns a value below this threshold."
+  "Legacy threshold used when a rule returns a single number."
   :type 'number
   :group 'org-resolutions)
 
@@ -48,16 +55,20 @@
   nil
   "Alist mapping item names to functions.
 
-Each function receives a list of numeric arguments and returns a number.
-The item is checked when that number is less than
-`org-resolutions-threshold`.
+Each function receives a list of numeric arguments.
+
+Functions may return either a number or a list of the form (GOAL CURRENT).
+When a number is returned, the original threshold behavior is used and the
+item becomes either 0% or 100%.  When a list is returned, the item cookie is
+set to the computed percentage and completion is based on whether CURRENT has
+reached GOAL.
 
 See `example-usage.el` for a sample configuration."
   :type '(alist :key-type string :value-type function)
   :group 'org-resolutions)
 
 (defconst org-resolutions--checkbox-regexp
-  "^\\([ \t]*[-+*]\\(?:[ \t]+\\)\\)\\(\\[[ X-]\\]\\)\\([ \t]+.*\\)$")
+  "^\\([ \t]*[-+*]\\(?:[ \t]+\\)\\)\\(\\[[^]\n]+\\]\\)\\([ \t]+.*\\)$")
 
 (defun org-resolutions--item-line ()
   "Return the current item line as a string, or nil when not on an item."
@@ -110,8 +121,13 @@ See `example-usage.el` for a sample configuration."
         (list :name (car parts)
               :args (mapcar #'org-resolutions--number (cdr parts)))))))
 
-(defun org-resolutions--set-checkbox (checked)
-  "Set the checkbox on the current item line to CHECKED."
+(defun org-resolutions--line-token (line)
+  "Extract the bracket token from LINE."
+  (when (string-match org-resolutions--checkbox-regexp line)
+    (match-string 2 line)))
+
+(defun org-resolutions--replace-item-token (token)
+  "Replace the bracket token on the current item line with TOKEN."
   (save-excursion
     (org-beginning-of-item)
     (let ((line (org-resolutions--item-line)))
@@ -119,32 +135,71 @@ See `example-usage.el` for a sample configuration."
         (user-error "org-resolutions: expected a checkbox item"))
       (setq line
             (concat (match-string 1 line)
-                    (if checked "[X]" "[ ]")
+                    token
                     (match-string 3 line)))
       (delete-region (line-beginning-position) (line-end-position))
       (insert line))))
 
-(defun org-resolutions--update-cookie (marker-pos)
-  "Refresh the checkbox cookie for the list identified by MARKER-POS."
+(defun org-resolutions--progress-percent (goal current)
+  "Return completion percentage for GOAL and CURRENT, clamped to 0..100."
+  (cond
+   ((>= current goal) 100)
+   ((<= goal 0) 0)
+   (t
+    (max 0 (min 100 (floor (* 100.0 (/ (float current) goal))))))))
+
+(defun org-resolutions--normalize-result (result)
+  "Normalize rule RESULT into a plist with :percent and :complete."
+  (cond
+   ((numberp result)
+    (let ((complete (< result org-resolutions-threshold)))
+      (list :percent (if complete 100 0)
+            :complete complete)))
+   ((and (listp result)
+         (= (length result) 2)
+         (numberp (nth 0 result))
+         (numberp (nth 1 result)))
+    (let* ((goal (nth 0 result))
+           (current (nth 1 result))
+           (percent (org-resolutions--progress-percent goal current)))
+      (list :percent percent
+            :complete (= percent 100))))
+   (t
+    (user-error
+     "org-resolutions: rule must return a number or (GOAL CURRENT), got %S"
+     result))))
+
+(defun org-resolutions--set-item-percent (percent)
+  "Set the current item cookie to PERCENT."
+  (org-resolutions--replace-item-token (format "[%d%%]" percent)))
+
+(defun org-resolutions--set-marker-percent (marker-pos complete total)
+  "Set the marker item cookie at MARKER-POS from COMPLETE and TOTAL children."
   (save-excursion
     (goto-char marker-pos)
-    (when (fboundp 'org-update-checkbox-count)
-      (org-update-checkbox-count t))))
+    (org-resolutions--replace-item-token
+     (format "[%d%%]"
+             (if (> total 0)
+                 (floor (* 100.0 (/ (float complete) total)))
+               0)))))
 
 (defun org-resolutions--resolve-child-at-point ()
-  "Evaluate the child item at point and update its checkbox."
+  "Evaluate the child item at point and update its progress cookie."
   (let* ((line (or (org-resolutions--item-line)
                    (user-error "org-resolutions: point is not on a list item")))
          (spec (or (org-resolutions--parse-child-line line)
                    (user-error "org-resolutions: item does not match NAME ARG... syntax")))
-         (rule (alist-get (plist-get spec :name) org-resolutions-rules nil nil #'string=)))
+         (rule (alist-get (plist-get spec :name) org-resolutions-rules nil nil #'string=))
+         (result nil))
     (unless rule
       (user-error "org-resolutions: no rule configured for %S" (plist-get spec :name)))
-    (org-resolutions--set-checkbox
-     (< (funcall rule (plist-get spec :args)) org-resolutions-threshold))))
+    (setq result (org-resolutions--normalize-result
+                  (funcall rule (plist-get spec :args))))
+    (org-resolutions--set-item-percent (plist-get result :percent))
+    result))
 
 (defun org-resolutions--child-item-positions (marker-pos)
-  "Return the positions of immediate child items under MARKER-POS."
+  "Return markers for immediate child items under MARKER-POS."
   (save-excursion
     (goto-char marker-pos)
     (org-beginning-of-item)
@@ -157,7 +212,7 @@ See `example-usage.el` for a sample configuration."
         (cond
          ((looking-at "^[ \t]*$")
           (forward-line 1))
-         ((not (looking-at "^[ \t]*[-+*][ \t]+\\[[ X-]\\]"))
+         ((not (looking-at "^[ \t]*[-+*][ \t]+\\[[^]\n]+\\]"))
           (forward-line 1))
          (t
           (let ((indent (current-indentation)))
@@ -166,10 +221,10 @@ See `example-usage.el` for a sample configuration."
               (goto-char end))
              ((null child-indent)
               (setq child-indent indent)
-              (push (point) positions)
+              (push (copy-marker (point)) positions)
               (forward-line 1))
              ((= indent child-indent)
-              (push (point) positions)
+              (push (copy-marker (point)) positions)
               (forward-line 1))
              (t
               (forward-line 1)))))))
@@ -181,14 +236,18 @@ See `example-usage.el` for a sample configuration."
   (interactive)
   (let ((marker-pos (or (org-resolutions--marker-item-pos)
                         (user-error "org-resolutions: not inside a %s list"
-                                    org-resolutions-marker))))
+                                    org-resolutions-marker)))
+        (complete-count 0)
+        (positions nil))
+    (setq positions (org-resolutions--child-item-positions marker-pos))
     (save-excursion
-      (dolist (pos (org-resolutions--child-item-positions marker-pos))
+      (dolist (pos positions)
         (goto-char pos)
-        (org-resolutions--resolve-child-at-point)))
-    (org-resolutions--update-cookie marker-pos)
+        (when (plist-get (org-resolutions--resolve-child-at-point) :complete)
+          (setq complete-count (1+ complete-count)))))
+    (org-resolutions--set-marker-percent marker-pos complete-count (length positions))
     (message "org-resolutions: updated %d items"
-             (length (org-resolutions--child-item-positions marker-pos)))))
+             (length positions))))
 
 (defun org-resolutions--ctrl-c-ctrl-c-hook ()
   "Handle `org-ctrl-c-ctrl-c' inside resolutions lists."

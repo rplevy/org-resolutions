@@ -3,15 +3,16 @@
 * Overview
 
 ~org-resolutions.el~ evaluates Org checkbox items from named numeric rules.
-When a rule returns a value less than ~org-resolutions-threshold~, the item is
-checked automatically.
+Rules can return a numeric threshold result or a ~(GOAL CURRENT)~ pair; the
+latter renders each child item as a percentage cookie like ~[27%]~.
 
 Example Org list:
 
 #+begin_src org
-- [0%] #+resolutions
-  - [ ] bike-miles 10 8 12
-  - [ ] read-pages 70
+- [33%] #+resolutions
+  - [27%] drink-water 4 5 4
+  - [48%] bike-miles 13 16
+  - [100%] read-pages 70
 #+end_src
 
 * Add It To Your .emacs
@@ -25,9 +26,9 @@ If the files live in =~/src/org-resolutions/=, add that directory to your
 (require 'org-resolutions)
 
 (setq org-resolutions-rules
-      '(("bike-miles" . (lambda (args) (- 60 (apply #'+ args))))
-        ("read-pages" . (lambda (args) (- 60 (apply #'+ args)))))
-      org-resolutions-threshold 1)
+      '(("drink-water" . (lambda (args) (list 48 (apply #'+ args))))
+        ("bike-miles" . (lambda (args) (list 60 (apply #'+ args))))
+        ("read-pages" . (lambda (args) (list 60 (apply #'+ args))))))
 
 (org-resolutions-mode 1)
 #+end_src
@@ -57,3 +58,16 @@ NAME ARG1 ARG2 ...
 
 The ~NAME~ is looked up in ~org-resolutions-rules~, and the numeric arguments
 are passed to the corresponding function as a list.
+
+If a rule returns ~(GOAL CURRENT)~, the child item is shown as
+~[floor(100 * CURRENT / GOAL)%]~, clamped to 100%.  Parent percentage cookies
+still behave like normal Org checkbox lists: only children at 100% count as
+complete, so the parent is based on completed children rather than averaging
+the child percentages.
+
+That means a line like ~read-pages 70~ with a goal of ~60~ must display
+~[100%]~, not ~[0%]~, because values above the goal are capped rather than
+wrapping or resetting.
+
+In the example above, only one of the three children is complete, so the
+parent must display ~[33%]~.
