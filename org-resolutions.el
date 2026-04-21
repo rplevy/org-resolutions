@@ -68,7 +68,7 @@ See `example-usage.el` for a sample configuration."
   :group 'org-resolutions)
 
 (defconst org-resolutions--checkbox-regexp
-  "^\\([ \t]*[-+*]\\(?:[ \t]+\\)\\)\\(\\[[^]\n]+\\]\\)\\([ \t]+.*\\)$")
+  "^\\([ \t]*[-+*]\\(?:[ \t]+\\)\\)\\(\\[[^]\n]+\\]\\)\\([ \t]+\\)\\(.*\\)$")
 
 (defun org-resolutions--item-line ()
   "Return the current item line as a string, or nil when not on an item."
@@ -115,7 +115,7 @@ See `example-usage.el` for a sample configuration."
 (defun org-resolutions--parse-child-line (line)
   "Parse a child item LINE into a plist."
   (when (string-match org-resolutions--checkbox-regexp line)
-    (let* ((content (string-trim (match-string 3 line)))
+    (let* ((content (string-trim (match-string 4 line)))
            (parts (split-string content "[ \t]+" t)))
       (when parts
         (list :name (car parts)
@@ -136,7 +136,8 @@ See `example-usage.el` for a sample configuration."
       (setq line
             (concat (match-string 1 line)
                     token
-                    (match-string 3 line)))
+                    " "
+                    (match-string 4 line)))
       (delete-region (line-beginning-position) (line-end-position))
       (insert line))))
 
