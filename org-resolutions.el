@@ -188,7 +188,10 @@ See `example-usage.el` for a sample configuration."
   (let* ((line (or (org-resolutions--item-line)
                    (user-error "org-resolutions: point is not on a list item")))
          (spec (or (org-resolutions--parse-child-line line)
-                   (user-error "org-resolutions: item does not match NAME ARG... syntax")))
+                   (user-error
+                    "org-resolutions: item at line %d does not match NAME ARG... syntax: %s"
+                    (line-number-at-pos)
+                    line)))
          (rule (alist-get (plist-get spec :name) org-resolutions-rules nil nil #'string=))
          (result nil))
     (unless rule
