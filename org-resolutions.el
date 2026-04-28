@@ -141,6 +141,44 @@ See `example-usage.el` for a sample configuration."
       (delete-region (line-beginning-position) (line-end-position))
       (insert line))))
 
+(defun org-resolutions--content-parts (content)
+  "Return (NAME . REST) parsed from item CONTENT, or nil."
+  (when (string-match "\\`\\([^ \t]+\\)[ \t]+\\(.*\\)\\'" content)
+    (cons (match-string 1 content)
+          (match-string 2 content))))
+
+(defun org-resolutions--align-item-content (positions)
+  "Align item content after checkbox cookies at POSITIONS."
+  (let ((token-width 0)
+        (name-width 0))
+    (save-excursion
+      (dolist (pos positions)
+        (goto-char pos)
+        (when-let ((line (org-resolutions--item-line)))
+          (when (string-match org-resolutions--checkbox-regexp line)
+            (setq token-width
+                  (max token-width (length (match-string 2 line))))
+            (when-let ((parts (org-resolutions--content-parts (match-string 4 line))))
+              (setq name-width
+                    (max name-width (length (car parts)))))))))
+    (save-excursion
+      (dolist (pos positions)
+        (goto-char pos)
+        (when-let ((line (org-resolutions--item-line)))
+          (when (string-match org-resolutions--checkbox-regexp line)
+            (let* ((prefix (match-string 1 line))
+                   (token (match-string 2 line))
+                   (content (match-string 4 line))
+                   (parts (org-resolutions--content-parts content))
+                   (padding (make-string (1+ (- token-width (length token))) ?\s)))
+              (when parts
+                (setq content
+                      (concat (car parts)
+                              (make-string (1+ (- name-width (length (car parts)))) ?\s)
+                              (cdr parts))))
+              (delete-region (line-beginning-position) (line-end-position))
+              (insert prefix token padding content))))))))
+
 (defun org-resolutions--progress-percent (goal current)
   "Return completion percentage for GOAL and CURRENT, clamped to 0..100."
   (cond
@@ -249,6 +287,7 @@ See `example-usage.el` for a sample configuration."
         (goto-char pos)
         (when (plist-get (org-resolutions--resolve-child-at-point) :complete)
           (setq complete-count (1+ complete-count)))))
+    (org-resolutions--align-item-content positions)
     (org-resolutions--set-marker-percent marker-pos complete-count (length positions))
     (message "org-resolutions: updated %d items"
              (length positions))))
